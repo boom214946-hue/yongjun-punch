@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>永駿車業 員工打卡</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+:root{
+  --bg:#EEF1F4; --ink:#1C2733; --muted:#5B6878; --line:#D3D9E0; --card:#FFFFFF;
+  --in:#1F4E79; --out:#B4611A; --ok:#2E7D4F; --err:#B3261E;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#141A21; --ink:#E7ECF1; --muted:#9AA7B5; --line:#2C3642; --card:#1C242D;
+    --in:#3D7AB8; --out:#C9701F; --ok:#5CB880; --err:#F07167;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  padding:calc(env(safe-area-inset-top,0px) + 28px) 20px calc(env(safe-area-inset-bottom,0px) + 24px);
+  display:flex; justify-content:center;
+}
+main{width:100%; max-width:420px; display:flex; flex-direction:column; gap:22px}
+header h1{margin:0; font-size:1rem; font-weight:600; color:var(--muted)}
+header p{margin:6px 0 0; font-size:1.375rem; font-weight:700}
+.clock{padding:26px 0 22px; border-top:3px solid var(--ink); border-bottom:1px solid var(--line)}
+.time{font-size:clamp(3.25rem,18vw,4.5rem); font-weight:700; line-height:1;
+  font-variant-numeric:tabular-nums; letter-spacing:-0.02em}
+.date{margin-top:10px; color:var(--muted); font-size:1rem}
+.actions{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+button{appearance:none; border:0; border-radius:14px; padding:24px 8px;
+  font:inherit; font-size:1.25rem; font-weight:700; color:#fff; cursor:pointer;
+  transition:transform .08s ease}
+button:active{transform:scale(.97)}
+#btnIn{background:var(--in)}
+#btnOut{background:var(--out)}
+button:disabled{opacity:.45; cursor:default}
+button:focus-visible{outline:3px solid var(--ink); outline-offset:3px}
+.status{min-height:4.5em; padding:16px 18px; border-radius:10px; background:var(--card);
+  border-left:4px solid var(--line); font-size:1.0625rem; line-height:1.55}
+.status.ok{border-left-color:var(--ok)}
+.status.err{border-left-color:var(--err)}
+.note{margin:0; color:var(--muted); font-size:.875rem; line-height:1.6}
+@media (prefers-reduced-motion:reduce){button{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>永駿車業 員工打卡</h1>
+    <p id="hello">你好</p>
+  </header>
+
+  <section class="clock" aria-label="目前時間">
+    <div class="time" id="time">--:--:--</div>
+    <div class="date" id="date"></div>
+  </section>
+
+  <div class="actions">
+    <button id="btnIn" disabled>上班打卡</button>
+    <button id="btnOut" disabled>下班打卡</button>
+  </div>
+
+  <div class="status" id="status" role="status" aria-live="polite">準備中…</div>
+
+  <p class="note">打卡時會讀取一次手機位置，用來確認你在公司附近，不會持續追蹤。</p>
+</main>
+
+<script>
+const LIFF_ID = '2012275132-U1EqAze0';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxt0HzsFbKOiaHA3szo9DJ4SpwokSLGmlGEPAmK5gE2ggDJ5tpEz7I1123cL83JQ-S4/exec';
+
+const $ = id => document.getElementById(id);
+
+function tick() {
+  const now = new Date();
+  $('time').textContent = now.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
+  $('date').textContent = now.toLocaleDateString('zh-TW', {
+    timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'long'
+  });
+}
+tick();
+setInterval(tick, 1000);
+
+function show(msg, kind) {
+  const s = $('status');
+  s.textContent = msg;
+  s.className = 'status' + (kind ? ' ' + kind : '');
+}
+function setBusy(b) { $('btnIn').disabled = b; $('btnOut').disabled = b; }
+
+async function start() {
+  setBusy(true);
+  show('正在確認你的 LINE 身分…');
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    const p = liff.getDecodedIDToken();
+    $('hello').textContent = ((p && p.name) || '同仁') + '，你好';
+    show('請選擇上班或下班打卡。');
+    setBusy(false);
+  } catch (e) {
+    show('無法連上 LINE，請關閉頁面後從官方帳號重新開啟。（' + e.message + '）', 'err');
+  }
+}
+
+function getPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject({ code: 'none' });
+    navigator.geolocation.getCurrentPosition(resolve, reject,
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  });
+}
+
+async function punch(type) {
+  setBusy(true);
+  show('正在取得你的位置…');
+  let pos;
+  try {
+    pos = await getPosition();
+  } catch (e) {
+    show(e && e.code === 1
+      ? '沒有定位權限。請到手機設定，允許 LINE 使用位置資訊後再打卡一次。'
+      : '抓不到定位，請移到靠窗或戶外處再打卡一次。', 'err');
+    setBusy(false);
+    return;
+  }
+  show('正在送出' + type + '打卡…');
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        idToken: liff.getIDToken(),
+        type: type,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude
+      })
+    });
+    const data = await res.json();
+    show(data.message, data.ok ? 'ok' : 'err');
+  } catch (e) {
+    show('送出失敗，請確認網路後再打卡一次。', 'err');
+  }
+  setBusy(false);
+}
+
+$('btnIn').addEventListener('click', () => punch('上班'));
+$('btnOut').addEventListener('click', () => punch('下班'));
+start();
+</script>
+</body>
+</html>
