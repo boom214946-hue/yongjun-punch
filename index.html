@@ -62,7 +62,7 @@ button:focus-visible{outline:3px solid var(--ink); outline-offset:3px}
 .mytoday{margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:6px}
 .mytoday li{display:flex; justify-content:space-between; font-variant-numeric:tabular-nums}
 .tag{font-size:.8125rem; font-weight:600; padding:2px 8px; border-radius:999px; border:1px solid currentColor}
-.tag.field{color:var(--out)} .tag.absent{color:var(--muted)} .tag.ok{color:var(--ok)}
+.tag.err{color:var(--err)} .tag.field{color:var(--out)} .tag.absent{color:var(--muted)} .tag.ok{color:var(--ok)}
 .admin-head{display:flex; justify-content:space-between; align-items:baseline; gap:12px;
   padding-top:18px; border-top:3px solid var(--ink)}
 .admin-head h2{margin:0; font-size:1.25rem}
@@ -79,6 +79,7 @@ button:focus-visible{outline:3px solid var(--ink); outline-offset:3px}
 .people .btns{display:flex; gap:8px}
 .empty{color:var(--muted); margin:0}
 details summary{cursor:pointer; color:var(--muted); font-size:.9375rem}
+.row{display:grid; grid-template-columns:1fr 1fr; gap:10px}
 .note{margin:0; color:var(--muted); font-size:.875rem; line-height:1.6}
 @media (prefers-reduced-motion:reduce){button{transition:none}}
 </style>
@@ -129,6 +130,37 @@ details summary{cursor:pointer; color:var(--muted); font-size:.9375rem}
     <ul class="mytoday" id="myToday"></ul>
   </section>
 
+  <button class="ghost single" id="openLeave" hidden>申請請假</button>
+
+  <section class="box" id="leaveBox" hidden>
+    <h2>申請請假 <small style="font-weight:400;color:var(--muted)">（主管核准後才算完成）</small></h2>
+    <label for="lvType">假別</label>
+    <select id="lvType"></select>
+    <label for="lvStartDate">開始</label>
+    <div class="row">
+      <input type="date" id="lvStartDate">
+      <input type="time" id="lvStartTime" aria-label="開始時間">
+    </div>
+    <label for="lvEndDate">結束</label>
+    <div class="row">
+      <input type="date" id="lvEndDate">
+      <input type="time" id="lvEndTime" aria-label="結束時間">
+    </div>
+    <label for="lvHours">請假時數（以 1 小時為單位）</label>
+    <input type="number" id="lvHours" min="1" step="1" inputmode="numeric" placeholder="例如：4">
+    <label for="lvReason">原因（可不填）</label>
+    <textarea id="lvReason" rows="2" maxlength="100" placeholder="例如：家中有事"></textarea>
+    <div class="box-actions">
+      <button class="primary" id="btnLeave">送出請假申請</button>
+      <button class="ghost" id="btnLeaveCancel">取消</button>
+    </div>
+  </section>
+
+  <section class="box" id="myLeavesBox" hidden>
+    <h2>我的請假</h2>
+    <ul class="people" id="myLeaves"></ul>
+  </section>
+
   <!-- 管理頁（只有管理員看得到）-->
   <section id="adminArea" hidden>
     <div class="admin-head">
@@ -140,6 +172,11 @@ details summary{cursor:pointer; color:var(--muted); font-size:.9375rem}
       <h2>今日到班 <span id="adDate" class="empty" style="font-weight:400"></span></h2>
       <div class="summary" id="adSummary"></div>
       <ul class="people" id="adToday"></ul>
+    </section>
+
+    <section class="box" style="margin-top:16px">
+      <h2>待審核請假</h2>
+      <ul class="people" id="adLeaves"></ul>
     </section>
 
     <section class="box" style="margin-top:16px">
@@ -167,6 +204,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxJOtxxXxO3PthM7NziHC-A
 const $ = id => document.getElementById(id);
 let pending = null;   // 範圍外時，暫存這次打卡的資料
 let busy = false;
+let isAdmin = false;
 
 // ---------- 時鐘 ----------
 function tick() {
@@ -256,8 +294,12 @@ function render(me) {
   }
   $('punchArea').hidden = false;
   renderMyToday(me.today);
+  $('lvType').replaceChildren(...(me.leaveTypes || []).map(t => el('option', { value: t, text: t })));
+  $('openLeave').hidden = false;
+  renderMyLeaves(me.leaves);
   show('請選擇上班或下班打卡。');
   if (emp.role === '管理員') {
+    isAdmin = true;
     $('adminArea').hidden = false;
     loadAdmin();
   }
@@ -309,7 +351,10 @@ async function sendPunch(payload, waiting) {
       show(r.message, 'err');
     } else {
       show(r.message, r.ok ? 'ok' : 'err');
-      if (r.ok) { $('fieldBox').hidden = true; pending = null; renderMyToday(r.today); }
+      if (r.ok) {
+        $('fieldBox').hidden = true; pending = null; renderMyToday(r.today);
+        if (isAdmin) loadAdmin();
+      }
     }
   } catch (e) {
     show('送出失敗，請確認網路後再打卡一次。', 'err');
@@ -344,6 +389,79 @@ async function sendField() {
   await sendPunch(Object.assign({}, pending, { field: true, reason: reason }), '正在送出外勤打卡…');
 }
 
+// ---------- 請假 ----------
+const STATUS_TAG = { '待審核': 'field', '已核准': 'ok', '不核准': 'err', '已取消': 'absent' };
+function todayStr() { return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' }); }
+
+function openLeave() {
+  ['lvStartTime', 'lvEndTime', 'lvHours', 'lvReason'].forEach(id => { $(id).value = ''; });
+  $('lvStartDate').value = todayStr();
+  $('lvEndDate').value = todayStr();
+  $('leaveBox').hidden = false;
+  $('openLeave').hidden = true;
+}
+function closeLeave() { $('leaveBox').hidden = true; $('openLeave').hidden = false; }
+
+async function sendLeave() {
+  const v = id => $(id).value.trim();
+  if (!v('lvStartDate') || !v('lvStartTime') || !v('lvEndDate') || !v('lvEndTime')) {
+    show('請填寫請假的開始和結束日期、時間。', 'err'); return;
+  }
+  if (v('lvEndDate') + v('lvEndTime') <= v('lvStartDate') + v('lvStartTime')) {
+    show('結束時間要晚於開始時間。', 'err'); return;
+  }
+  const hours = Number(v('lvHours'));
+  if (!(Number.isInteger(hours) && hours >= 1)) {
+    show('請假時數以 1 小時為單位，請填整數。', 'err'); $('lvHours').focus(); return;
+  }
+  setBusy(true);
+  show('正在送出請假申請…');
+  try {
+    const r = await api({ action: 'leave_apply', leaveType: $('lvType').value,
+      startDate: v('lvStartDate'), startTime: v('lvStartTime'),
+      endDate: v('lvEndDate'), endTime: v('lvEndTime'), hours: hours, reason: v('lvReason') });
+    show(r.message, r.ok ? 'ok' : 'err');
+    if (r.ok) { closeLeave(); renderMyLeaves(r.leaves); if (isAdmin) loadAdmin(); }
+  } catch (e) { show('送出失敗，請確認網路後再試一次。', 'err'); }
+  setBusy(false);
+}
+
+function renderMyLeaves(list) {
+  if (!list || !list.length) { $('myLeavesBox').hidden = true; return; }
+  $('myLeaves').replaceChildren(...list.map(l => el('li', {}, [
+    el('span', { class: 'who', text: l.type + ' ' + l.hours + ' 小時' }),
+    el('span', { class: 'tag ' + (STATUS_TAG[l.status] || 'absent'), text: l.status }),
+    el('div', { class: 'times' }, [
+      el('span', { text: l.start + ' ～ ' + l.end }),
+      l.status === '待審核'
+        ? el('button', { class: 'ghost small-btn', text: '取消申請', onclick: () => cancelLeave(l) }) : null
+    ])
+  ])));
+  $('myLeavesBox').hidden = false;
+}
+
+async function cancelLeave(l) {
+  if (!window.confirm('確定要取消這筆' + l.type + '申請嗎？')) return;
+  setBusy(true);
+  try {
+    const r = await api({ action: 'leave_cancel', id: l.id });
+    show(r.message, r.ok ? 'ok' : 'err');
+    if (r.ok) { renderMyLeaves(r.leaves); if (isAdmin) loadAdmin(); }
+  } catch (e) { show('操作失敗，請再試一次。', 'err'); }
+  setBusy(false);
+}
+
+async function decideLeave(l, approve) {
+  if (!window.confirm('確定' + (approve ? '同意' : '不同意') + '「' + l.name + '」的' + l.type + ' ' + l.hours + ' 小時嗎？')) return;
+  setBusy(true);
+  try {
+    const r = await api({ action: 'leave_decide', id: l.id, approve: approve });
+    show(r.message, r.ok ? 'ok' : 'err');
+    await loadAdmin();
+  } catch (e) { show('操作失敗，請再試一次。', 'err'); }
+  setBusy(false);
+}
+
 // ---------- 管理頁 ----------
 async function loadAdmin() {
   try {
@@ -369,6 +487,19 @@ function renderAdmin(r) {
     ])
   ])));
   if (!r.attendance.length) $('adToday').replaceChildren(el('li', {}, [el('p', { class: 'empty', text: '還沒有在職員工' })]));
+
+  $('adLeaves').replaceChildren(...(r.leavesPending.length ? r.leavesPending.map(l => el('li', {}, [
+    el('span', { class: 'who', text: l.name }, [el('small', { text: l.dept })]),
+    el('span', { class: 'tag field', text: l.type + ' ' + l.hours + 'h' }),
+    el('div', { class: 'times' }, [
+      el('span', { text: l.start + ' ～ ' + l.end }),
+      el('span', { text: '原因：' + (l.reason || '—') })
+    ]),
+    el('div', { class: 'btns', style: 'grid-column:1 / -1' }, [
+      el('button', { class: 'primary small-btn', text: '同意', onclick: () => decideLeave(l, true) }),
+      el('button', { class: 'ghost small-btn', text: '不同意', onclick: () => decideLeave(l, false) })
+    ])
+  ])) : [el('li', {}, [el('p', { class: 'empty', text: '目前沒有待審核的請假' })])]));
 
   $('adPending').replaceChildren(...(r.pending.length ? r.pending.map(p => el('li', {}, [
     el('span', { class: 'who', text: p.name }, [el('small', { text: p.dept })]),
@@ -408,6 +539,12 @@ async function adminAction(action, person) {
 
 // ---------- 綁定按鈕 ----------
 $('btnRegister').addEventListener('click', sendRegister);
+$('openLeave').addEventListener('click', openLeave);
+$('btnLeave').addEventListener('click', sendLeave);
+$('btnLeaveCancel').addEventListener('click', () => { closeLeave(); show('已取消。'); });
+$('lvStartDate').addEventListener('change', () => {
+  if (!$('lvEndDate').value || $('lvEndDate').value < $('lvStartDate').value) $('lvEndDate').value = $('lvStartDate').value;
+});
 $('btnIn').addEventListener('click', () => punch('上班'));
 $('btnOut').addEventListener('click', () => punch('下班'));
 $('btnField').addEventListener('click', sendField);
