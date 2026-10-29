@@ -23,10 +23,11 @@ html,body{margin:0;min-height:100%}
 body{
   background:var(--bg); color:var(--ink);
   font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
-  padding:calc(env(safe-area-inset-top,0px) + 28px) 20px calc(env(safe-area-inset-bottom,0px) + 24px);
+  padding:calc(env(safe-area-inset-top,0px) + 28px) 20px calc(env(safe-area-inset-bottom,0px) + 32px);
   display:flex; justify-content:center;
 }
-main{width:100%; max-width:420px; display:flex; flex-direction:column; gap:22px}
+main{width:100%; max-width:440px; display:flex; flex-direction:column; gap:20px}
+[hidden]{display:none !important}
 header h1{margin:0; font-size:1rem; font-weight:600; color:var(--muted)}
 header p{margin:6px 0 0; font-size:1.375rem; font-weight:700}
 .clock{padding:26px 0 22px; border-top:3px solid var(--ink); border-bottom:1px solid var(--line)}
@@ -38,14 +39,46 @@ button{appearance:none; border:0; border-radius:14px; padding:24px 8px;
   font:inherit; font-size:1.25rem; font-weight:700; color:#fff; cursor:pointer;
   transition:transform .08s ease}
 button:active{transform:scale(.97)}
-#btnIn{background:var(--in)}
-#btnOut{background:var(--out)}
 button:disabled{opacity:.45; cursor:default}
 button:focus-visible{outline:3px solid var(--ink); outline-offset:3px}
+#btnIn{background:var(--in)}
+#btnOut{background:var(--out)}
 .status{min-height:4.5em; padding:16px 18px; border-radius:10px; background:var(--card);
   border-left:4px solid var(--line); font-size:1.0625rem; line-height:1.55}
 .status.ok{border-left-color:var(--ok)}
 .status.err{border-left-color:var(--err)}
+.box{display:flex; flex-direction:column; gap:10px; padding:16px 18px; border-radius:10px;
+  background:var(--card); border:1px solid var(--line)}
+.box h2{margin:0; font-size:1.0625rem}
+.box label{font-size:.875rem; color:var(--muted); margin-bottom:-4px}
+.box input,.box select,.box textarea{width:100%; font:inherit; font-size:1.0625rem; padding:10px 12px;
+  border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink)}
+.box textarea{resize:vertical}
+.box-actions{display:grid; grid-template-columns:2fr 1fr; gap:10px; margin-top:4px}
+.box-actions button,.single{padding:14px 8px; font-size:1.0625rem}
+.primary{background:var(--in)}
+.warn{background:var(--out)}
+.ghost{background:transparent; color:var(--ink); border:1px solid var(--line)}
+.mytoday{margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:6px}
+.mytoday li{display:flex; justify-content:space-between; font-variant-numeric:tabular-nums}
+.tag{font-size:.8125rem; font-weight:600; padding:2px 8px; border-radius:999px; border:1px solid currentColor}
+.tag.field{color:var(--out)} .tag.absent{color:var(--muted)} .tag.ok{color:var(--ok)}
+.admin-head{display:flex; justify-content:space-between; align-items:baseline; gap:12px;
+  padding-top:18px; border-top:3px solid var(--ink)}
+.admin-head h2{margin:0; font-size:1.25rem}
+.small-btn{padding:8px 14px; font-size:.9375rem; border-radius:10px}
+.summary{font-size:1.0625rem; font-weight:700}
+.people{margin:0; padding:0; list-style:none}
+.people li{display:grid; grid-template-columns:1fr auto; gap:4px 12px; padding:12px 0;
+  border-bottom:1px solid var(--line)}
+.people li:last-child{border-bottom:0}
+.people .who{font-weight:700}
+.people .who small{font-weight:400; color:var(--muted); margin-left:6px}
+.people .times{grid-column:1 / -1; color:var(--muted); font-size:.9375rem; font-variant-numeric:tabular-nums;
+  display:flex; gap:16px; flex-wrap:wrap; align-items:center}
+.people .btns{display:flex; gap:8px}
+.empty{color:var(--muted); margin:0}
+details summary{cursor:pointer; color:var(--muted); font-size:.9375rem}
 .note{margin:0; color:var(--muted); font-size:.875rem; line-height:1.6}
 @media (prefers-reduced-motion:reduce){button{transition:none}}
 </style>
@@ -62,14 +95,69 @@ button:focus-visible{outline:3px solid var(--ink); outline-offset:3px}
     <div class="date" id="date"></div>
   </section>
 
-  <div class="actions">
-    <button id="btnIn" disabled>上班打卡</button>
-    <button id="btnOut" disabled>下班打卡</button>
+  <!-- 申請加入 -->
+  <section class="box" id="registerBox" hidden>
+    <h2>第一次使用，請先申請加入</h2>
+    <label for="rgName">姓名（請填真實姓名）</label>
+    <input id="rgName" maxlength="20" autocomplete="name">
+    <label for="rgDept">部門</label>
+    <select id="rgDept"></select>
+    <button class="primary single" id="btnRegister">送出申請</button>
+  </section>
+
+  <!-- 打卡 -->
+  <div id="punchArea" hidden>
+    <div class="actions">
+      <button id="btnIn">上班打卡</button>
+      <button id="btnOut">下班打卡</button>
+    </div>
   </div>
 
   <div class="status" id="status" role="status" aria-live="polite">準備中…</div>
 
-  <p class="note">打卡時會讀取一次手機位置，用來確認你在公司附近，不會持續追蹤。</p>
+  <section class="box" id="fieldBox" hidden>
+    <h2>外出工作嗎？請填寫外勤原因</h2>
+    <textarea id="fdReason" rows="2" maxlength="100" placeholder="例如：去桃園交車"></textarea>
+    <div class="box-actions">
+      <button class="warn" id="btnField">送出外勤打卡</button>
+      <button class="ghost" id="btnFieldCancel">取消</button>
+    </div>
+  </section>
+
+  <section class="box" id="todayBox" hidden>
+    <h2>我今天的打卡</h2>
+    <ul class="mytoday" id="myToday"></ul>
+  </section>
+
+  <!-- 管理頁（只有管理員看得到）-->
+  <section id="adminArea" hidden>
+    <div class="admin-head">
+      <h2>管理</h2>
+      <button class="ghost small-btn" id="btnRefresh">重新整理</button>
+    </div>
+
+    <section class="box" style="margin-top:16px">
+      <h2>今日到班 <span id="adDate" class="empty" style="font-weight:400"></span></h2>
+      <div class="summary" id="adSummary"></div>
+      <ul class="people" id="adToday"></ul>
+    </section>
+
+    <section class="box" style="margin-top:16px">
+      <h2>待核准加入</h2>
+      <ul class="people" id="adPending"></ul>
+    </section>
+
+    <section class="box" style="margin-top:16px">
+      <h2>員工名單</h2>
+      <ul class="people" id="adEmployees"></ul>
+      <details id="adResignedWrap">
+        <summary>已離職員工</summary>
+        <ul class="people" id="adResigned"></ul>
+      </details>
+    </section>
+  </section>
+
+  <p class="note">打卡時會讀取一次手機位置，用來確認你在打卡地點附近，不會持續追蹤。</p>
 </main>
 
 <script>
@@ -77,7 +165,10 @@ const LIFF_ID = '2012275132-U1EqAze0';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxt0HzsFbKOiaHA3szo9DJ4SpwokSLGmlGEPAmK5gE2ggDJ5tpEz7I1123cL83JQ-S4/exec';
 
 const $ = id => document.getElementById(id);
+let pending = null;   // 範圍外時，暫存這次打卡的資料
+let busy = false;
 
+// ---------- 時鐘 ----------
 function tick() {
   const now = new Date();
   $('time').textContent = now.toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
@@ -88,26 +179,103 @@ function tick() {
 tick();
 setInterval(tick, 1000);
 
+// ---------- 小工具 ----------
 function show(msg, kind) {
   const s = $('status');
   s.textContent = msg;
   s.className = 'status' + (kind ? ' ' + kind : '');
 }
-function setBusy(b) { $('btnIn').disabled = b; $('btnOut').disabled = b; }
+function setBusy(b) {
+  busy = b;
+  document.querySelectorAll('main button').forEach(btn => { btn.disabled = b; });
+}
+function el(tag, attrs, children) {
+  const n = document.createElement(tag);
+  Object.entries(attrs || {}).forEach(([k, v]) => {
+    if (k === 'text') n.textContent = v;
+    else if (k === 'onclick') n.addEventListener('click', v);
+    else n.setAttribute(k, v);
+  });
+  (children || []).forEach(c => c && n.appendChild(c));
+  return n;
+}
+async function api(payload) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify(Object.assign({ idToken: liff.getIDToken() }, payload))
+  });
+  return res.json();
+}
 
+// ---------- 啟動 ----------
 async function start() {
   setBusy(true);
   show('正在確認你的 LINE 身分…');
   try {
     await liff.init({ liffId: LIFF_ID });
     if (!liff.isLoggedIn()) { liff.login(); return; }
-    const p = liff.getDecodedIDToken();
-    $('hello').textContent = ((p && p.name) || '同仁') + '，你好';
-    show('請選擇上班或下班打卡。');
+    const me = await api({ action: 'me' });
     setBusy(false);
+    render(me);
   } catch (e) {
-    show('無法連上 LINE，請關閉頁面後從官方帳號重新開啟。（' + e.message + '）', 'err');
+    show('無法連線，請關閉頁面後從官方帳號重新開啟。（' + e.message + '）', 'err');
   }
+}
+
+function render(me) {
+  if (!me.ok) { show(me.message, 'err'); return; }
+  const emp = me.employee;
+  if (!emp) {
+    $('hello').textContent = '歡迎';
+    $('rgName').value = me.lineName || '';
+    $('rgDept').replaceChildren(el('option', { value: '', text: '請選擇部門' }),
+      ...me.depts.map(d => el('option', { value: d, text: d })));
+    $('registerBox').hidden = false;
+    show('第一次使用，請填寫姓名和部門，送出後等待主管核准。');
+    return;
+  }
+  $('hello').textContent = emp.name + '，你好';
+  if (emp.status === '待核准') {
+    show('已送出加入申請，等待主管核准。核准後重新開啟此頁面就能打卡。');
+    return;
+  }
+  if (emp.status !== '在職') {
+    show('你的帳號已停用，如有疑問請聯絡主管。', 'err');
+    return;
+  }
+  $('punchArea').hidden = false;
+  renderMyToday(me.today);
+  show('請選擇上班或下班打卡。');
+  if (emp.role === '管理員') {
+    $('adminArea').hidden = false;
+    loadAdmin();
+  }
+}
+
+// ---------- 申請加入 ----------
+async function sendRegister() {
+  const name = $('rgName').value.trim(), dept = $('rgDept').value;
+  if (!name) { show('請填寫姓名。', 'err'); $('rgName').focus(); return; }
+  if (!dept) { show('請選擇部門。', 'err'); return; }
+  setBusy(true);
+  show('正在送出申請…');
+  try {
+    const r = await api({ action: 'register', name: name, dept: dept });
+    show(r.message, r.ok ? 'ok' : 'err');
+    if (r.ok) $('registerBox').hidden = true;
+  } catch (e) { show('送出失敗，請確認網路後再試一次。', 'err'); }
+  setBusy(false);
+}
+
+// ---------- 打卡 ----------
+function renderMyToday(list) {
+  const ul = $('myToday');
+  if (!list || !list.length) { $('todayBox').hidden = true; return; }
+  ul.replaceChildren(...list.map(p => el('li', {}, [
+    el('span', { text: p.type + '　' + p.time }),
+    p.result === '外勤' ? el('span', { class: 'tag field', text: '外勤' }) : el('span', { class: 'tag ok', text: '正常' })
+  ])));
+  $('todayBox').hidden = false;
 }
 
 function getPosition() {
@@ -118,7 +286,29 @@ function getPosition() {
   });
 }
 
+async function sendPunch(payload, waiting) {
+  setBusy(true);
+  show(waiting);
+  try {
+    const r = await api(Object.assign({ action: 'punch' }, payload));
+    if (r.outOfRange) {
+      pending = payload;
+      $('fdReason').value = '';
+      $('fieldBox').hidden = false;
+      show(r.message, 'err');
+    } else {
+      show(r.message, r.ok ? 'ok' : 'err');
+      if (r.ok) { $('fieldBox').hidden = true; pending = null; renderMyToday(r.today); }
+    }
+  } catch (e) {
+    show('送出失敗，請確認網路後再打卡一次。', 'err');
+  }
+  setBusy(false);
+  if (!$('fieldBox').hidden) $('fdReason').focus();
+}
+
 async function punch(type) {
+  $('fieldBox').hidden = true;
   setBusy(true);
   show('正在取得你的位置…');
   let pos;
@@ -131,27 +321,91 @@ async function punch(type) {
     setBusy(false);
     return;
   }
-  show('正在送出' + type + '打卡…');
+  setBusy(false);
+  await sendPunch({ type: type, lat: pos.coords.latitude, lng: pos.coords.longitude },
+                  '正在送出' + type + '打卡…');
+}
+
+async function sendField() {
+  const reason = $('fdReason').value.trim();
+  if (!reason) { show('請先填寫外勤原因再送出。', 'err'); $('fdReason').focus(); return; }
+  if (!pending) return;
+  await sendPunch(Object.assign({}, pending, { field: true, reason: reason }), '正在送出外勤打卡…');
+}
+
+// ---------- 管理頁 ----------
+async function loadAdmin() {
   try {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      body: JSON.stringify({
-        idToken: liff.getIDToken(),
-        type: type,
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude
-      })
-    });
-    const data = await res.json();
-    show(data.message, data.ok ? 'ok' : 'err');
+    const r = await api({ action: 'admin' });
+    if (!r.ok) { show(r.message, 'err'); return; }
+    renderAdmin(r);
   } catch (e) {
-    show('送出失敗，請確認網路後再打卡一次。', 'err');
+    show('管理資料讀取失敗，請按「重新整理」。', 'err');
+  }
+}
+
+function renderAdmin(r) {
+  $('adDate').textContent = r.date;
+  const arrived = r.attendance.filter(a => a.inTime).length;
+  $('adSummary').textContent = '已到班 ' + arrived + ' / ' + r.attendance.length + ' 人';
+  $('adToday').replaceChildren(...r.attendance.map(a => el('li', {}, [
+    el('span', { class: 'who', text: a.name }, [el('small', { text: a.dept })]),
+    a.inTime ? (a.inResult === '外勤' ? el('span', { class: 'tag field', text: '外勤' }) : el('span', { class: 'tag ok', text: '已到' }))
+             : el('span', { class: 'tag absent', text: '未到' }),
+    el('div', { class: 'times' }, [
+      el('span', { text: '上班 ' + (a.inTime || '—') }),
+      el('span', { text: '下班 ' + (a.outTime || '—') + (a.outResult === '外勤' ? '（外勤）' : '') })
+    ])
+  ])));
+  if (!r.attendance.length) $('adToday').replaceChildren(el('li', {}, [el('p', { class: 'empty', text: '還沒有在職員工' })]));
+
+  $('adPending').replaceChildren(...(r.pending.length ? r.pending.map(p => el('li', {}, [
+    el('span', { class: 'who', text: p.name }, [el('small', { text: p.dept })]),
+    el('div', { class: 'btns' }, [
+      el('button', { class: 'primary small-btn', text: '核准', onclick: () => adminAction('approve', p) }),
+      el('button', { class: 'ghost small-btn', text: '拒絕', onclick: () => adminAction('reject', p) })
+    ]),
+    el('div', { class: 'times', text: '申請時間 ' + p.applied })
+  ])) : [el('li', {}, [el('p', { class: 'empty', text: '目前沒有待核准的申請' })])]));
+
+  const active = r.employees.filter(e => e.status === '在職');
+  const resigned = r.employees.filter(e => e.status === '離職');
+  $('adEmployees').replaceChildren(...active.map(e => el('li', {}, [
+    el('span', { class: 'who', text: e.name }, [el('small', { text: e.dept + (e.role === '管理員' ? '・管理員' : '') })]),
+    e.role === '管理員' ? null
+      : el('button', { class: 'ghost small-btn', text: '設為離職', onclick: () => adminAction('resign', e) })
+  ])));
+  $('adResignedWrap').hidden = !resigned.length;
+  $('adResigned').replaceChildren(...resigned.map(e => el('li', {}, [
+    el('span', { class: 'who', text: e.name }, [el('small', { text: e.dept })])
+  ])));
+}
+
+async function adminAction(action, person) {
+  const words = { approve: '核准', reject: '拒絕', resign: '設為離職' };
+  if (!window.confirm('確定要將「' + person.name + '」' + words[action] + '嗎？')) return;
+  setBusy(true);
+  try {
+    const r = await api({ action: action, targetId: person.lineId });
+    show(r.message, r.ok ? 'ok' : 'err');
+    await loadAdmin();
+  } catch (e) {
+    show('操作失敗，請再試一次。', 'err');
   }
   setBusy(false);
 }
 
+// ---------- 綁定按鈕 ----------
+$('btnRegister').addEventListener('click', sendRegister);
 $('btnIn').addEventListener('click', () => punch('上班'));
 $('btnOut').addEventListener('click', () => punch('下班'));
+$('btnField').addEventListener('click', sendField);
+$('btnFieldCancel').addEventListener('click', () => {
+  $('fieldBox').hidden = true; pending = null; show('已取消。');
+});
+$('btnRefresh').addEventListener('click', async () => {
+  setBusy(true); show('重新整理中…'); await loadAdmin(); show('已更新。'); setBusy(false);
+});
 start();
 </script>
 </body>
