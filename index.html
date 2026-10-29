@@ -162,7 +162,7 @@ details summary{cursor:pointer; color:var(--muted); font-size:.9375rem}
 
 <script>
 const LIFF_ID = '2012275132-U1EqAze0';
-const API_URL = 'https://script.google.com/macros/s/AKfycbxt0HzsFbKOiaHA3szo9DJ4SpwokSLGmlGEPAmK5gE2ggDJ5tpEz7I1123cL83JQ-S4/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxJOtxxXxO3PthM7NziHC-Ac7rLTX7pOrBwypR4ZP1MIqU3LAT_mk99Zh-187otc5FN/exec';
 
 const $ = id => document.getElementById(id);
 let pending = null;   // 範圍外時，暫存這次打卡的資料
@@ -208,17 +208,28 @@ async function api(payload) {
 }
 
 // ---------- 啟動 ----------
+function withTimeout(promise, ms, label) {
+  return Promise.race([promise, new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(label + '逾時')), ms))]);
+}
+
 async function start() {
   setBusy(true);
-  show('正在確認你的 LINE 身分…');
+  show('步驟 1/2：正在連線 LINE…');
   try {
-    await liff.init({ liffId: LIFF_ID });
+    await withTimeout(liff.init({ liffId: LIFF_ID }), 15000, '連線 LINE ');
     if (!liff.isLoggedIn()) { liff.login(); return; }
-    const me = await api({ action: 'me' });
+  } catch (e) {
+    show('步驟 1 失敗：無法連線 LINE。請關閉頁面後重新開啟。（' + e.message + '）', 'err');
+    return;
+  }
+  show('步驟 2/2：正在讀取員工資料…（第一次可能需要 10 秒）');
+  try {
+    const me = await withTimeout(api({ action: 'me' }), 25000, '讀取員工資料');
     setBusy(false);
     render(me);
   } catch (e) {
-    show('無法連線，請關閉頁面後從官方帳號重新開啟。（' + e.message + '）', 'err');
+    show('步驟 2 失敗：打卡程式沒有回應。請確認 Apps Script 已執行 setup 並部署新版本。（' + e.message + '）', 'err');
   }
 }
 
