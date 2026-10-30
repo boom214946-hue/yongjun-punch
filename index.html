@@ -80,6 +80,47 @@ button:focus-visible{outline:3px solid var(--ink); outline-offset:3px}
 .empty{color:var(--muted); margin:0}
 details summary{cursor:pointer; color:var(--muted); font-size:.9375rem}
 .row{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+.row > *{min-width:0}
+/* 班表 */
+.sched{display:flex; flex-direction:column; gap:12px}
+.sched-head{display:grid; grid-template-columns:auto 1fr auto auto; gap:8px; align-items:center}
+.sched-head h2{margin:0; font-size:1.25rem; text-align:center}
+.icon-btn{padding:10px 14px; font-size:1rem; border-radius:10px}
+.brushes{display:flex; flex-wrap:wrap; gap:8px}
+.brush{padding:10px 14px; font-size:1rem; border-radius:10px; color:var(--ink); border:2px solid var(--line)}
+.brush[aria-pressed="true"]{border-color:var(--ink); box-shadow:0 0 0 2px var(--ink) inset}
+.hint{margin:0; color:var(--muted); font-size:.875rem; line-height:1.5}
+.sched-wrap{overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--line);
+  border-radius:10px; background:var(--card)}
+.sched-wrap table{border-collapse:separate; border-spacing:0; font-size:.875rem; font-variant-numeric:tabular-nums}
+.sched-wrap th,.sched-wrap td{min-width:42px; height:40px; padding:2px; text-align:center;
+  border-right:1px solid var(--line); border-bottom:1px solid var(--line); white-space:nowrap}
+.sched-wrap .stick{position:sticky; left:0; z-index:2; background:var(--card); min-width:76px;
+  text-align:left; padding-left:8px}
+.sched-wrap .stick small{display:block; color:var(--muted); font-weight:400; font-size:.6875rem}
+.sched-wrap thead th{font-weight:600}
+.sched-wrap .wkend{color:var(--err)}
+.sched-wrap .is-today{box-shadow:inset 0 -3px 0 var(--in)}
+.sched-wrap .note-cell{height:auto; min-height:28px; font-size:.6875rem; color:var(--out);
+  white-space:normal; line-height:1.2; max-width:42px; word-break:break-all}
+.sched-wrap tfoot td,.sched-wrap tfoot th{font-weight:700; background:var(--bg)}
+.c-休,.c-例{background:rgba(110,180,90,.35)}
+.c-國{background:rgba(60,120,50,.9); color:#fff}
+.c-值1,.c-值2{background:rgba(240,205,40,.55)}
+.c-lv{background:rgba(140,110,220,.32)}
+.lv-mark{display:block; font-size:.625rem; line-height:1.1; color:var(--ink)}
+.editable td.cell{cursor:pointer}
+td.dirty{outline:2px dashed var(--in); outline-offset:-3px}
+.annual-big{font-size:1.75rem; font-weight:700; font-variant-numeric:tabular-nums}
+.annual-big small{font-size:1rem; font-weight:600; color:var(--muted); margin-left:4px}
+.annual-lines{margin:0; padding:0; list-style:none; color:var(--muted); font-size:.9375rem; line-height:1.7}
+.legend{display:flex; flex-wrap:wrap; gap:10px; font-size:.8125rem; color:var(--muted)}
+.legend span{display:inline-flex; align-items:center; gap:4px}
+.legend i{display:inline-block; width:14px; height:14px; border-radius:3px; border:1px solid var(--line)}
+.savebar{position:sticky; bottom:calc(env(safe-area-inset-bottom,0px) + 8px); display:grid;
+  grid-template-columns:1fr auto auto; gap:8px; align-items:center; padding:12px 14px; border-radius:12px;
+  background:var(--card); border:2px solid var(--in); box-shadow:0 6px 18px rgba(0,0,0,.15); z-index:5}
+.savebar span{font-weight:700}
 .note{margin:0; color:var(--muted); font-size:.875rem; line-height:1.6}
 @media (prefers-reduced-motion:reduce){button{transition:none}}
 </style>
@@ -130,7 +171,39 @@ details summary{cursor:pointer; color:var(--muted); font-size:.9375rem}
     <ul class="mytoday" id="myToday"></ul>
   </section>
 
-  <button class="ghost single" id="openLeave" hidden>申請請假</button>
+  <section class="box" id="annualBox" hidden>
+    <h2>我的特休</h2>
+    <div id="annualBody"></div>
+  </section>
+
+  <div class="row" id="empTools" hidden>
+    <button class="ghost single" id="openLeave">申請請假</button>
+    <button class="ghost single" id="openSched">查看班表</button>
+  </div>
+
+  <section class="sched" id="schedArea" hidden>
+    <div class="sched-head">
+      <button class="ghost icon-btn" id="schPrev" aria-label="上個月">◀</button>
+      <h2 id="schTitle">班表</h2>
+      <button class="ghost icon-btn" id="schNext" aria-label="下個月">▶</button>
+      <button class="ghost icon-btn" id="schClose">關閉</button>
+    </div>
+    <div id="schTools" hidden>
+      <div class="brushes" id="schBrushes"></div>
+      <p class="hint">先選上面的班別，再點表格的格子套用。點最上面的「日期」可以寫特殊節日備註。改完記得按「儲存」。</p>
+    </div>
+    <div class="sched-wrap" id="schWrap"><table id="schTable"></table></div>
+    <div class="legend">
+      <span><i class="c-休"></i>休／例</span><span><i class="c-國"></i>國定</span>
+      <span><i class="c-值1"></i>值班</span><span><i class="c-lv"></i>請假（已核准）</span>
+      <span>空白＝正常上班</span>
+    </div>
+    <div class="savebar" id="schSaveBar" hidden>
+      <span id="schCount"></span>
+      <button class="primary small-btn" id="schSave">儲存</button>
+      <button class="ghost small-btn" id="schDiscard">放棄</button>
+    </div>
+  </section>
 
   <section class="box" id="leaveBox" hidden>
     <h2>申請請假 <small style="font-weight:400;color:var(--muted)">（主管核准後才算完成）</small></h2>
@@ -146,6 +219,7 @@ details summary{cursor:pointer; color:var(--muted); font-size:.9375rem}
       <input type="date" id="lvEndDate">
       <input type="time" id="lvEndTime" aria-label="結束時間">
     </div>
+    <p class="hint" id="lvAnnualHint" hidden></p>
     <label for="lvHours">請假時數（以 1 小時為單位）</label>
     <input type="number" id="lvHours" min="1" step="1" inputmode="numeric" placeholder="例如：4">
     <label for="lvReason">原因（可不填）</label>
@@ -177,6 +251,11 @@ details summary{cursor:pointer; color:var(--muted); font-size:.9375rem}
     <section class="box" style="margin-top:16px">
       <h2>待審核請假</h2>
       <ul class="people" id="adLeaves"></ul>
+    </section>
+
+    <section class="box" style="margin-top:16px" id="adPayoutBox" hidden>
+      <h2>特休到期未休（需折算工資）</h2>
+      <ul class="people" id="adPayout"></ul>
     </section>
 
     <section class="box" style="margin-top:16px">
@@ -295,8 +374,9 @@ function render(me) {
   $('punchArea').hidden = false;
   renderMyToday(me.today);
   $('lvType').replaceChildren(...(me.leaveTypes || []).map(t => el('option', { value: t, text: t })));
-  $('openLeave').hidden = false;
+  $('empTools').hidden = false;
   renderMyLeaves(me.leaves);
+  renderAnnual(me.annual);
   show('請選擇上班或下班打卡。');
   if (emp.role === '管理員') {
     isAdmin = true;
@@ -389,6 +469,37 @@ async function sendField() {
   await sendPunch(Object.assign({}, pending, { field: true, reason: reason }), '正在送出外勤打卡…');
 }
 
+// ---------- 特休 ----------
+let annual = null;
+function renderAnnual(a) {
+  annual = a || null;
+  const body = $('annualBody');
+  $('annualBox').hidden = false;
+  if (!a || !a.hired) {
+    body.replaceChildren(el('p', { class: 'empty', text: '主管還沒設定你的到職日，設定後就能看到特休時數。' }));
+    updateAnnualHint();
+    return;
+  }
+  const lines = [];
+  if (a.pendingHours) lines.push('審核中：' + a.pendingHours + ' 小時（已先預留，未計入可用時數）');
+  if (a.nextExpiry) lines.push('其中 ' + a.nextExpiry.hours + ' 小時請在 ' + a.nextExpiry.date + ' 前休完');
+  if (a.nextGrant) lines.push('下次給予：' + a.nextGrant.date + '，' + a.nextGrant.hours + ' 小時');
+  lines.push('到職日：' + a.hired);
+  body.replaceChildren(
+    el('div', { class: 'annual-big', text: String(a.available) }, [el('small', { text: '小時可用' })]),
+    el('ul', { class: 'annual-lines' }, lines.map(t => el('li', { text: t })))
+  );
+  updateAnnualHint();
+}
+function updateAnnualHint() {
+  const hint = $('lvAnnualHint');
+  const isAnnual = $('lvType').value === '特休';
+  hint.hidden = !isAnnual;
+  if (isAnnual) hint.textContent = annual && annual.hired
+    ? '目前可用特休 ' + annual.available + ' 小時' + (annual.pendingHours ? '（另有 ' + annual.pendingHours + ' 小時審核中）' : '')
+    : '主管還沒設定你的到職日，暫時無法請特休。';
+}
+
 // ---------- 請假 ----------
 const STATUS_TAG = { '待審核': 'field', '已核准': 'ok', '不核准': 'err', '已取消': 'absent' };
 function todayStr() { return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' }); }
@@ -421,7 +532,7 @@ async function sendLeave() {
       startDate: v('lvStartDate'), startTime: v('lvStartTime'),
       endDate: v('lvEndDate'), endTime: v('lvEndTime'), hours: hours, reason: v('lvReason') });
     show(r.message, r.ok ? 'ok' : 'err');
-    if (r.ok) { closeLeave(); renderMyLeaves(r.leaves); if (isAdmin) loadAdmin(); }
+    if (r.ok) { closeLeave(); renderMyLeaves(r.leaves); renderAnnual(r.annual); if (isAdmin) loadAdmin(); }
   } catch (e) { show('送出失敗，請確認網路後再試一次。', 'err'); }
   setBusy(false);
 }
@@ -446,7 +557,7 @@ async function cancelLeave(l) {
   try {
     const r = await api({ action: 'leave_cancel', id: l.id });
     show(r.message, r.ok ? 'ok' : 'err');
-    if (r.ok) { renderMyLeaves(r.leaves); if (isAdmin) loadAdmin(); }
+    if (r.ok) { renderMyLeaves(r.leaves); renderAnnual(r.annual); if (isAdmin) loadAdmin(); }
   } catch (e) { show('操作失敗，請再試一次。', 'err'); }
   setBusy(false);
 }
@@ -459,6 +570,172 @@ async function decideLeave(l, approve) {
     show(r.message, r.ok ? 'ok' : 'err');
     await loadAdmin();
   } catch (e) { show('操作失敗，請再試一次。', 'err'); }
+  setBusy(false);
+}
+
+// ---------- 班表 ----------
+const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
+let sch = null;            // 目前顯示的月份資料
+let schMonth = '';
+let brush = '';            // 目前選的班別（空白＝上班）
+let dirty = {};            // 未儲存的格子：'日期|lineId' → 班別
+let dirtyNotes = {};       // 未儲存的備註：日期 → 文字
+
+function monthStr(offset) {
+  const base = schMonth ? new Date(schMonth + '-01T00:00:00Z')
+                        : new Date(todayStr().slice(0, 7) + '-01T00:00:00Z');
+  base.setUTCMonth(base.getUTCMonth() + (offset || 0));
+  return base.toISOString().slice(0, 7);
+}
+function dirtyCount() { return Object.keys(dirty).length + Object.keys(dirtyNotes).length; }
+
+async function openSched(month) {
+  if (dirtyCount() && !window.confirm('有變更還沒儲存，確定要離開嗎？')) return;
+  dirty = {}; dirtyNotes = {};
+  schMonth = month || monthStr(0);
+  $('schedArea').hidden = false;
+  $('schTitle').textContent = schMonth.replace('-', ' 年 ') + ' 月';
+  $('schTable').replaceChildren();
+  show('正在讀取班表…');
+  setBusy(true);
+  try {
+    const r = await api({ action: 'schedule', month: schMonth });
+    if (!r.ok) { show(r.message, 'err'); return; }
+    sch = r;
+    renderBrushes();
+    renderSched();
+    updateSaveBar();
+    show(r.editable ? '班表已載入，可以開始排班。' : '班表已載入。');
+    $('schedArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    show('班表讀取失敗，請再試一次。', 'err');
+  } finally {
+    setBusy(false);
+  }
+}
+
+function closeSched() {
+  if (dirtyCount() && !window.confirm('有變更還沒儲存，確定要關閉嗎？')) return;
+  dirty = {}; dirtyNotes = {};
+  $('schedArea').hidden = true;
+  $('schSaveBar').hidden = true;
+}
+
+function renderBrushes() {
+  $('schTools').hidden = !sch.editable;
+  if (!sch.editable) return;
+  const opts = [''].concat(sch.codes);
+  $('schBrushes').replaceChildren(...opts.map(c => {
+    const b = el('button', { class: 'brush ' + (c ? 'c-' + c : ''), text: c || '上班',
+                             'aria-pressed': String(c === brush) });
+    b.addEventListener('click', () => { brush = c; renderBrushes(); });
+    return b;
+  }));
+}
+
+function cellCode(lineId, date) {
+  const k = date + '|' + lineId;
+  if (k in dirty) return dirty[k];
+  return (sch.cells[lineId] || {})[date] || '';
+}
+function noteOf(date) { return date in dirtyNotes ? dirtyNotes[date] : (sch.notes[date] || ''); }
+
+function renderSched() {
+  const t = $('schTable');
+  t.className = sch.editable ? 'editable' : '';
+  const dayTh = d => {
+    const cls = (d.dow === 0 || d.dow === 6 ? 'wkend ' : '') + (d.date === sch.today ? 'is-today' : '');
+    return { cls: cls };
+  };
+  // 第一列：日期（管理員點日期可寫備註）
+  const r1 = el('tr', {}, [el('th', { class: 'stick', text: '日期' })].concat(sch.days.map(d => {
+    const th = el('th', { class: dayTh(d).cls, text: String(Number(d.date.slice(8))) });
+    if (sch.editable) th.addEventListener('click', () => editNote(d.date));
+    return th;
+  })));
+  const r2 = el('tr', {}, [el('th', { class: 'stick', text: '星期' })].concat(sch.days.map(d =>
+    el('th', { class: dayTh(d).cls, text: WEEK[d.dow] }))));
+  const r3 = el('tr', {}, [el('th', { class: 'stick', text: '特殊節日' })].concat(sch.days.map(d => {
+    const td = el('td', { class: 'note-cell' + (d.date in dirtyNotes ? ' dirty' : ''), text: noteOf(d.date) });
+    if (sch.editable) td.addEventListener('click', () => editNote(d.date));
+    return td;
+  })));
+  const thead = el('thead', {}, [r1, r2, r3]);
+
+  const rows = sch.employees.map(e => el('tr', {}, [
+    el('th', { class: 'stick', text: e.name }, [el('small', { text: e.dept })])
+  ].concat(sch.days.map(d => buildCell(e, d)))));
+  const tbody = el('tbody', {}, rows);
+
+  const foot = el('tr', {}, [el('th', { class: 'stick', text: '當日人力' })].concat(sch.days.map(d =>
+    el('td', { class: dayTh(d).cls, text: String(staffCount(d.date)) }))));
+  t.replaceChildren(thead, tbody, el('tfoot', {}, [foot]));
+}
+
+function buildCell(e, d) {
+  const code = cellCode(e.lineId, d.date);
+  const lv = (sch.leaves[e.lineId] || {})[d.date];
+  let cls = 'cell' + (code ? ' c-' + code : (lv ? ' c-lv' : '')) + (d.date === sch.today ? ' is-today' : '');
+  if ((d.date + '|' + e.lineId) in dirty) cls += ' dirty';
+  const td = el('td', { class: cls, text: code });
+  if (lv) td.appendChild(el('span', { class: 'lv-mark', text: lv.type.slice(0, 2) + (lv.hours && !lv.full ? lv.hours + 'h' : '') }));
+  if (sch.editable) td.addEventListener('click', () => paint(e, d, td));
+  return td;
+}
+
+function staffCount(date) {
+  return sch.employees.filter(e => {
+    if (sch.off.indexOf(cellCode(e.lineId, date)) >= 0) return false;
+    const lv = (sch.leaves[e.lineId] || {})[date];
+    return !(lv && lv.full);
+  }).length;
+}
+
+function paint(e, d, td) {
+  const k = d.date + '|' + e.lineId;
+  const original = (sch.cells[e.lineId] || {})[d.date] || '';
+  if (brush === original) delete dirty[k]; else dirty[k] = brush;
+  td.replaceWith(buildCell(e, d));
+  refreshFooter(d);
+  updateSaveBar();
+}
+
+function refreshFooter(d) {
+  const idx = sch.days.findIndex(x => x.date === d.date);
+  const cell = $('schTable').tFoot.rows[0].cells[idx + 1];
+  if (cell) cell.textContent = String(staffCount(d.date));
+}
+
+function editNote(date) {
+  const v = window.prompt(date + ' 的特殊節日備註（例如：例會、發薪、國慶；最多 20 字，清空就是刪除）', noteOf(date));
+  if (v === null) return;
+  const text = v.trim().slice(0, 20);
+  if (text === (sch.notes[date] || '')) delete dirtyNotes[date]; else dirtyNotes[date] = text;
+  renderSched();
+  updateSaveBar();
+}
+
+function updateSaveBar() {
+  const n = dirtyCount();
+  $('schSaveBar').hidden = !n;
+  $('schCount').textContent = n + ' 項變更未儲存';
+}
+
+async function saveSched() {
+  const changes = Object.entries(dirty).map(([k, code]) => {
+    const [date, lineId] = k.split('|');
+    return { date: date, lineId: lineId, code: code };
+  });
+  const notes = Object.entries(dirtyNotes).map(([date, note]) => ({ date: date, note: note }));
+  setBusy(true);
+  show('正在儲存班表…');
+  try {
+    const r = await api({ action: 'schedule_save', changes: changes, notes: notes });
+    show(r.message, r.ok ? 'ok' : 'err');
+    if (r.ok) { dirty = {}; dirtyNotes = {}; setBusy(false); await openSched(schMonth); return; }
+  } catch (e) {
+    show('儲存失敗，請確認網路後再按一次「儲存」。', 'err');
+  }
   setBusy(false);
 }
 
@@ -514,8 +791,19 @@ function renderAdmin(r) {
   const resigned = r.employees.filter(e => e.status === '離職');
   $('adEmployees').replaceChildren(...active.map(e => el('li', {}, [
     el('span', { class: 'who', text: e.name }, [el('small', { text: e.dept + (e.role === '管理員' ? '・管理員' : '') })]),
-    e.role === '管理員' ? null
-      : el('button', { class: 'ghost small-btn', text: '設為離職', onclick: () => adminAction('resign', e) })
+    e.role === '管理員' ? el('span', {})
+      : el('button', { class: 'ghost small-btn', text: '設為離職', onclick: () => adminAction('resign', e) }),
+    el('div', { class: 'times', text: e.hired
+      ? '到職 ' + e.hired + '・特休剩 ' + e.annualAvail + ' 小時'
+      : '⚠️ 尚未設定到職日' })
+  ])));
+
+  const payout = r.annualPayout || [];
+  $('adPayoutBox').hidden = !payout.length;
+  $('adPayout').replaceChildren(...payout.map(p => el('li', {}, [
+    el('span', { class: 'who', text: p.name }),
+    el('span', { class: 'tag err', text: p.hours + ' 小時' }),
+    el('div', { class: 'times', text: p.expiry + ' 到期未休完' })
   ])));
   $('adResignedWrap').hidden = !resigned.length;
   $('adResigned').replaceChildren(...resigned.map(e => el('li', {}, [
@@ -539,7 +827,17 @@ async function adminAction(action, person) {
 
 // ---------- 綁定按鈕 ----------
 $('btnRegister').addEventListener('click', sendRegister);
-$('openLeave').addEventListener('click', openLeave);
+$('openLeave').addEventListener('click', () => { openLeave(); updateAnnualHint(); });
+$('lvType').addEventListener('change', updateAnnualHint);
+$('openSched').addEventListener('click', () => openSched());
+$('schPrev').addEventListener('click', () => openSched(monthStr(-1)));
+$('schNext').addEventListener('click', () => openSched(monthStr(1)));
+$('schClose').addEventListener('click', closeSched);
+$('schSave').addEventListener('click', saveSched);
+$('schDiscard').addEventListener('click', () => {
+  if (!window.confirm('確定放棄所有未儲存的變更嗎？')) return;
+  dirty = {}; dirtyNotes = {}; renderSched(); updateSaveBar(); show('已放棄變更。');
+});
 $('btnLeave').addEventListener('click', sendLeave);
 $('btnLeaveCancel').addEventListener('click', () => { closeLeave(); show('已取消。'); });
 $('lvStartDate').addEventListener('change', () => {
