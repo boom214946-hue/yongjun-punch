@@ -100,6 +100,8 @@ details summary{cursor:pointer; color:var(--muted); font-size:.9375rem}
 .sched-wrap .stick small{display:block; color:var(--muted); font-weight:400; font-size:.6875rem}
 .sched-wrap thead th{font-weight:600}
 .sched-wrap .wkend{color:var(--err)}
+.sched-wrap .hol{color:var(--err); background:rgba(179,38,30,.08)}
+.sched-wrap .hol-name{display:block; color:var(--err); font-weight:700}
 .sched-wrap .is-today{box-shadow:inset 0 -3px 0 var(--in)}
 .sched-wrap .note-cell{height:auto; min-height:28px; font-size:.6875rem; color:var(--out);
   white-space:normal; line-height:1.2; max-width:42px; word-break:break-all}
@@ -196,6 +198,7 @@ td.dirty{outline:2px dashed var(--in); outline-offset:-3px}
     <div class="legend">
       <span><i class="c-休"></i>休／例</span><span><i class="c-國"></i>國定</span>
       <span><i class="c-值1"></i>值班</span><span><i class="c-lv"></i>請假（已核准）</span>
+      <span style="color:var(--err)">紅字＝國定假日</span>
       <span>空白＝正常上班</span>
     </div>
     <div class="savebar" id="schSaveBar" hidden>
@@ -644,7 +647,8 @@ function renderSched() {
   const t = $('schTable');
   t.className = sch.editable ? 'editable' : '';
   const dayTh = d => {
-    const cls = (d.dow === 0 || d.dow === 6 ? 'wkend ' : '') + (d.date === sch.today ? 'is-today' : '');
+    const cls = (d.dow === 0 || d.dow === 6 ? 'wkend ' : '') + ((sch.holidays || {})[d.date] ? 'hol ' : '') +
+                (d.date === sch.today ? 'is-today' : '');
     return { cls: cls };
   };
   // 第一列：日期（管理員點日期可寫備註）
@@ -656,7 +660,10 @@ function renderSched() {
   const r2 = el('tr', {}, [el('th', { class: 'stick', text: '星期' })].concat(sch.days.map(d =>
     el('th', { class: dayTh(d).cls, text: WEEK[d.dow] }))));
   const r3 = el('tr', {}, [el('th', { class: 'stick', text: '特殊節日' })].concat(sch.days.map(d => {
-    const td = el('td', { class: 'note-cell' + (d.date in dirtyNotes ? ' dirty' : ''), text: noteOf(d.date) });
+    const hol = (sch.holidays || {})[d.date];
+    const td = el('td', { class: 'note-cell' + (d.date in dirtyNotes ? ' dirty' : '') },
+                  [hol ? el('span', { class: 'hol-name', text: hol }) : null,
+                   noteOf(d.date) ? el('span', { text: noteOf(d.date) }) : null]);
     if (sch.editable) td.addEventListener('click', () => editNote(d.date));
     return td;
   })));
