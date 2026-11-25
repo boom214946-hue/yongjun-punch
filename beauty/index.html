@@ -16,7 +16,8 @@ nav{display:flex;background:var(--navy);padding:0 6px;overflow-x:auto;position:s
 nav button{flex:1;min-width:64px;background:none;border:0;color:#C9D3E2;padding:10px 4px 12px;font-size:14px;border-bottom:3px solid transparent;position:relative}
 nav button.on{color:#fff;border-bottom-color:var(--gold);font-weight:600}
 nav .badge{position:absolute;top:4px;right:8px;background:var(--bad);color:#fff;border-radius:9px;font-size:11px;padding:0 5px}
-main{padding:12px 12px 90px}
+main{padding:12px 12px 90px;max-width:760px;margin:0 auto}
+@media(min-width:800px){header,nav{padding-left:calc(50vw - 372px);padding-right:calc(50vw - 372px)}nav button{flex:none;min-width:100px}.batch{max-width:760px;margin:0 auto}}
 .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .card h3{margin:0 0 10px;font-size:15px;color:var(--navy)}
 label.f{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
@@ -121,7 +122,10 @@ async function call(action, payload) {
   } catch (e) { throw new Error(e.message.indexOf('逾時') >= 0 ? e.message : '連不到伺服器，請確認網路後再試'); }
   let j;
   try { j = await res.json(); } catch (e) { throw new Error('伺服器回應格式錯誤（請確認 API 網址與部署設定）'); }
-  if (!j.ok) throw new Error(j.error);
+  if (!j.ok) {
+    if (/登入已過期/.test(j.error) && !liff.isInClient()) { liff.logout(); liff.login(); }
+    throw new Error(j.error);
+  }
   return j.data;
 }
 function fatal(msg) { $('who').textContent = ''; $('view').innerHTML = '<div class="center">⚠️ ' + esc(msg) + '</div>'; }
@@ -133,9 +137,10 @@ async function boot() {
     if (!/^https:\/\/script\.google\.com\//.test(API_URL)) throw new Error('index.html 裡的 API_URL 還沒填');
     $('who').textContent = '連線 LINE 中…';
     await withTimeout(liff.init({ liffId: LIFF_ID }), 15000, '無法連線 LINE，請關閉後重新開啟');
-    if (!liff.isLoggedIn()) {
-      if (liff.isInClient()) { liff.login(); return; }
-      throw new Error('請從 LINE「頂好汽車｜文中店打卡」的選單開啟本頁');
+    if (!liff.isLoggedIn()) {          // 電腦或手機瀏覽器：導到 LINE 登入頁，登入後自動回來
+      $('who').textContent = '前往 LINE 登入…';
+      liff.login();
+      return;
     }
     $('who').textContent = '讀取資料中…';
     B = await call('init');
