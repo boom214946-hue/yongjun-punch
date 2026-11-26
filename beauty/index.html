@@ -54,7 +54,7 @@ textarea{min-height:60px}
 .sel{display:flex;justify-content:space-between;align-items:center;background:#EEF3FA;border-radius:9px;padding:10px}
 .st{display:inline-block;border-radius:6px;padding:2px 7px;font-size:12px;font-weight:600}
 .st-待審核{background:#FFF1DC;color:var(--warn)}.st-待簽收{background:#E4EEFF;color:#2B62C9}
-.st-退回{background:#FCE4E4;color:var(--bad)}.st-已完成{background:#E1F4EA;color:var(--ok)}
+.st-退回{background:#FCE4E4;color:var(--bad)}.st-作廢{background:#ECEEF1;color:#8A93A0}.st-已完成{background:#E1F4EA;color:var(--ok)}
 .rec .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
 .rec p{margin:3px 0;font-size:14px}
 .rec a{color:#2B62C9}
@@ -185,7 +185,8 @@ function autoSplit() {
 function renderForm() {
   const v = $('view');
   let h = '';
-  if (F.id) h += '<div class="card" style="background:#FFF6E5"><b>修改退回的紀錄</b><br><span class="mut">改好後按最下方「重新送出」</span> <button class="btn sm sec" onclick="newForm();renderForm()">取消修改</button></div>';
+  if (F.id) h += '<div class="card" style="background:#FFF6E5"><b>修改紀錄</b><br><span class="mut">改好後按最下方「儲存修改」' +
+    (F.ctype === '公司車' ? '，公司車修改後會重新送審' : '') + '</span><br><button class="btn sm sec" style="margin-top:6px" onclick="newForm();renderForm()">取消修改</button></div>';
   h += '<div class="card"><h3>基本資料</h3><label class="f">施工日期</label><input type="date" value="' + F.date + '" onchange="F.date=this.value">' +
     '<label class="f">客戶類別</label><div class="seg">' + ['公司車', '同行', '客戶'].map(t =>
       '<button class="' + (F.ctype === t ? 'on' : '') + '" onclick="setType(\'' + t + '\')">' + t + '</button>').join('') + '</div>' +
@@ -200,7 +201,7 @@ function renderForm() {
     '<button class="chip add" onclick="addAddon(\'\')">＋其他</button></div><div id="addons">' + addonRows() + '</div>' +
     '<div class="sum" id="sum">' + sumHtml() + '</div></div>';
 
-  h += '<div class="card"><h3>施工技師與點數分配</h3><div class="chips">' + B.techs.map(t =>
+  h += '<div class="card"><h3>施工技師與點數分配</h3><div class="chips">' + B.techs.concat(F.techs.filter(n => B.techs.indexOf(n) < 0)).map(t =>
       '<button class="chip ' + (F.techs.indexOf(t) >= 0 ? 'on' : '') + '" onclick="toggleTech(' + esc(JSON.stringify(t)) + ')">' + esc(t) + '</button>').join('') +
     '</div><div id="alloc">' + allocRows() + '</div></div>';
 
@@ -209,7 +210,9 @@ function renderForm() {
     (F.id ? '<div class="mut">沒有重新上傳就保留原本的照片</div>' : '') +
     '<label class="f">備註</label><textarea oninput="F.note=this.value">' + esc(F.note) + '</textarea></div>';
 
-  if (F.ctype !== '公司車') {
+  if (F.ctype !== '公司車' && F.keepSign) {
+    h += '<div class="card"><h3>交車簽收</h3><p>已簽收' + (F.keepSign !== true ? '：<b>' + esc(F.keepSign) + '</b>' : '') + '</p><p class="mut">修改後會保留原本的簽收，不用重簽。</p></div>';
+  } else if (F.ctype !== '公司車') {
     h += '<div class="card"><h3>交車簽收</h3><div class="seg"><button class="' + (F.signNow ? 'on' : '') + '" onclick="F.signNow=true;renderForm()">現在簽收</button>' +
       '<button class="' + (!F.signNow ? 'on' : '') + '" onclick="F.signNow=false;F.sign=null;renderForm()">交車時再簽</button></div>';
     if (F.signNow) h += F.sign ? '<p>簽收人：<b>' + esc(F.sign.name) + '</b></p><img src="' + F.sign.image + '" style="width:100%;border:1px solid var(--line);border-radius:8px"><button class="btn sm sec" onclick="signForForm()">重新簽名</button>'
@@ -218,7 +221,7 @@ function renderForm() {
     h += '</div>';
   } else h += '<p class="mut" style="margin:0 4px 12px">公司車送出後由 ' + esc('主管／行政') + ' 審核，審核通過就完成品管。</p>';
 
-  h += '<button class="btn" id="submitBtn" onclick="submitForm()">' + (F.id ? '重新送出' : '送出') + '</button>';
+  h += '<button class="btn" id="submitBtn" onclick="submitForm()">' + (F.id ? '儲存修改' : '送出') + '</button>';
   v.innerHTML = h;
 }
 
@@ -316,17 +319,19 @@ function signForForm() { openSign('客戶簽收', F.cname, s => { F.sign = s; re
 
 async function submitForm() {
   const btn = $('submitBtn');
-  if (F.ctype !== '公司車' && F.signNow && !F.sign) return toast('請客戶簽名，或改選「交車時再簽」');
+  if (F.ctype !== '公司車' && !F.keepSign && F.signNow && !F.sign) return toast('請客戶簽名，或改選「交車時再簽」');
   busy(btn, true, '送出中…');
   try {
     const r = await call('submit', { id: F.id, date: F.date, ctype: F.ctype, vehicleId: F.vehicleId, cname: F.cname, plate: F.plate,
       model: F.model, phone: F.phone, amount: F.amount, code: F.code,
       addons: F.addons.map(a => ({ item: a.item, points: a.points })),
       alloc: F.techs.map(n => ({ name: n, points: F.alloc[n] })), note: F.note, photos: F.photos,
-      sign: F.signNow ? F.sign : null });
+      sign: F.signNow && !F.keepSign ? F.sign : null });
+    const wasEdit = !!F.id;
     if (F.vehicleId) { const c = B.vehicles.find(x => x.id === F.vehicleId); if (c && !F.id) c.washes = (c.washes || 0) + 1; }
-    toast(r.status === '待審核' ? '已送出，等待審核' : r.status === '待簽收' ? '已送出，交車時請客戶簽收' : '已完成登記');
-    newForm(); renderForm();
+    toast((wasEdit ? '已儲存修改，' : '已送出，') + (r.status === '待審核' ? '等待審核' : r.status === '待簽收' ? '交車時請客戶簽收' : '已完成'));
+    newForm();
+    if (wasEdit) go('list'); else renderForm();
   } catch (e) { toast(e.message, 4000); busy(btn, false); }
 }
 
@@ -361,7 +366,7 @@ let LIST = { month: '', status: '', data: [] };
 async function renderList() {
   if (!LIST.month) LIST.month = thisMonth();
   $('view').innerHTML = '<div class="card"><div class="row"><input type="month" value="' + LIST.month + '" onchange="LIST.month=this.value;renderList()">' +
-    '<select onchange="LIST.status=this.value;renderList()">' + ['', '待審核', '待簽收', '退回', '已完成'].map(s =>
+    '<select onchange="LIST.status=this.value;renderList()">' + ['', '待審核', '待簽收', '退回', '已完成', '作廢'].map(s =>
       '<option value="' + s + '"' + (LIST.status === s ? ' selected' : '') + '>' + (s || '全部狀態') + '</option>').join('') + '</select></div></div><div id="lst" class="center">載入中…</div>';
   try {
     LIST.data = await call('list', { month: LIST.month, status: LIST.status });
@@ -379,11 +384,13 @@ function recCard(r, extra) {
   if (r.status === '退回') h += '<p class="warn">退回原因：' + esc(r.reason) + '（' + esc(r.reviewer) + '）</p>';
   if (r.reviewer && r.status === '已完成') h += '<p class="mut">審核：' + esc(r.reviewer) + ' ' + esc(r.reviewedAt) + '</p>';
   if (r.signer) h += '<p class="mut">簽收：' + esc(r.signer) + ' ' + esc(r.signedAt) + (r.signImg ? ' <a href="' + esc(r.signImg) + '" target="_blank">看簽名</a>' : '') + '</p>';
+  if (r.status === '作廢') h += '<p class="warn">作廢原因：' + esc(r.voidReason) + '（' + esc(r.voidBy) + ' ' + esc(r.voidAt) + '）</p>';
+  if (r.editedBy) h += '<p class="mut">最後修改：' + esc(r.editedBy) + ' ' + esc(r.editedAt) + '</p>';
   if (r.photos.length) h += '<p>' + r.photos.map((u, i) => '<a href="' + esc(u) + '" target="_blank">照片' + (i + 1) + '</a>').join('　') + '</p>';
   h += '<p class="mut">填寫：' + esc(r.createdBy) + ' ' + esc(r.createdAt) + '</p>';
   const acts = [];
   if (r.status === '待簽收' && (B.me.isTech || B.me.isAdmin)) acts.push('<button class="btn" onclick="signRec(\'' + r.id + '\',this)">客戶簽收</button>');
-  if (r.canEdit) acts.push('<button class="btn sec" onclick="editRec(\'' + r.id + '\')">修改後重送</button>');
+  if (r.canEdit && !extra) acts.push('<button class="btn sec" onclick="editRec(\'' + r.id + '\')">修改</button>', '<button class="btn sec" style="color:var(--bad);border-color:var(--bad)" onclick="voidBox(\'' + r.id + '\',this)">作廢</button>');
   if (extra) acts.push(extra);
   if (acts.length) h += '<div class="acts">' + acts.join('') + '</div>';
   return h + '</div>';
@@ -395,14 +402,25 @@ function signRec(id, btn) {
     try { await call('sign', Object.assign({ id: id }, s)); toast('簽收完成'); renderList(); } catch (e) { toast(e.message); busy(btn, false); }
   });
 }
+function voidBox(id, btn) {
+  btn.closest('.acts').outerHTML = '<div style="margin-top:10px"><textarea id="vd_' + id + '" placeholder="作廢原因（例如：重複登記、登記錯車）"></textarea>' +
+    '<div class="acts"><button class="btn sec" onclick="renderList()">取消</button><button class="btn bad" onclick="doVoid(\'' + id + '\',this)">確認作廢</button></div></div>';
+}
+async function doVoid(id, btn) {
+  busy(btn, true);
+  try { await call('void', { id: id, reason: ($('vd_' + id) || {}).value }); toast('已作廢（紀錄保留，不計點數、不列帳）', 3000); renderList(); }
+  catch (e) { toast(e.message); busy(btn, false); }
+}
 function editRec(id) {
   const r = LIST.data.find(x => x.id === id);
   newForm();
   Object.assign(F, { id: r.id, date: r.date.replace(/\//g, '-'), ctype: r.ctype, vehicleId: r.vehicleId, cname: r.cname, plate: r.plate,
     model: r.model, phone: r.phone || '', amount: r.amount == null ? '' : r.amount, code: r.code, note: r.note || '',
     addons: r.addons.map(a => ({ item: a.item, points: a.points, custom: B.addons.indexOf(a.item) < 0 })),
-    techs: r.alloc.map(a => a.name).filter(n => B.techs.indexOf(n) >= 0), manual: true, alloc: {} });
+    techs: r.alloc.map(a => a.name), manual: true, alloc: {} });
   r.alloc.forEach(a => F.alloc[a.name] = a.points);
+  if (r.ctype !== '公司車' && r.status === '已完成') F.keepSign = r.signer || true;
+  if (r.ctype === '公司車' && r.vehicleId && !B.vehicles.some(v => v.id === r.vehicleId)) F.vehicleId = '';
   go('new');
 }
 
