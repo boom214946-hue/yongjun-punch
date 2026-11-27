@@ -156,6 +156,9 @@ td.dirty{outline:2px dashed var(--in); outline-offset:-3px}
   color:var(--ink) !important; font-size:1rem !important; font-weight:600; cursor:pointer; margin:0 !important}
 .upload-btn input{display:none}
 .topic{grid-column:1 / -1; font-weight:600; line-height:1.5}
+.voided{opacity:.55}
+.voided .topic{text-decoration:line-through}
+.vis-row{display:flex; flex-direction:column; gap:6px}
 @media (prefers-reduced-motion:reduce){button{transition:none}}
 </style>
 </head>
@@ -313,6 +316,10 @@ td.dirty{outline:2px dashed var(--in); outline-offset:-3px}
           <div class="field"><label for="rcStatus">狀態</label><select id="rcStatus"></select></div>
         </div>
         <p class="hint" id="rcConfirmHint" hidden style="color:var(--err)">此類別儲存後會 LINE 通知員工，員工須按「已讀確認」。</p>
+        <div class="vis-row">
+          <label class="chip"><input type="checkbox" id="rcVisible"><span>讓員工看得到這筆紀錄</span></label>
+          <p class="hint" id="rcVisHint"></p>
+        </div>
         <label for="rcTopic">溝通主題與事件</label>
         <input id="rcTopic" maxlength="100" placeholder="例如：上週連續 3 天遲到">
         <label for="rcFacts">具體事實</label>
@@ -441,7 +448,25 @@ async function api(payload) {
     method: 'POST',
     body: JSON.stringify(Object.assign({ idToken: liff.getIDToken() }, payload))
   });
-  return res.json();
+  const j = await res.json();
+  if (j && j.authError && relogin()) return new Promise(() => {});   // 正在重新登入，畫面會自動重開
+  return j;
+}
+// 電腦瀏覽器會記住舊的 LINE 登入，過期後自動重新登入一次（手機 LINE 每次開都是新的，不需要）
+function relogin() {
+  if (liff.isInClient()) return false;
+  if (sessionStorage.getItem('relogin')) return false;   // 已經試過一次，避免一直跳轉
+  sessionStorage.setItem('relogin', '1');
+  show('LINE 登入已過期，正在重新登入…');
+  try { liff.logout(); } catch (e) {}
+  liff.login();
+  return true;
+}
+function tokenExpired() {
+  try {
+    const t = liff.getDecodedIDToken();
+    return !t || !t.exp || t.exp * 1000 < Date.now() + 60000;
+  } catch (e) { return true; }
 }
 // 用手機瀏覽器開啟連結（Google Drive 照片需要登入 Google 帳號才能看）
 function openExt(url) {
@@ -465,6 +490,7 @@ async function start() {
   try {
     await withTimeout(liff.init({ liffId: LIFF_ID }), 15000, '連線 LINE ');
     if (!liff.isLoggedIn()) { liff.login(); return; }
+    if (!liff.isInClient() && tokenExpired() && relogin()) return;
   } catch (e) {
     show('步驟 1 失敗：無法連線 LINE。請關閉頁面後重新開啟。（' + e.message + '）', 'err');
     return;
@@ -472,6 +498,7 @@ async function start() {
   show('步驟 2/2：正在讀取員工資料…（第一次可能需要 10 秒）');
   try {
     const me = await withTimeout(api({ action: 'me' }), 25000, '讀取員工資料');
+    if (me.ok) sessionStorage.removeItem('relogin');
     setBusy(false);
     render(me);
   } catch (e) {
@@ -480,7 +507,11 @@ async function start() {
 }
 
 function render(me) {
-  if (!me.ok) { show(me.message, 'err'); return; }
+  if (!me.ok) {
+    show(me.authError && !liff.isInClient()
+      ? 'LINE 登入失敗。請關閉這個分頁，用 Chrome 無痕視窗重新打開打卡網址。' : me.message, 'err');
+    return;
+  }
   const emp = me.employee;
   if (!emp) {
     $('hello').textContent = '歡迎';
@@ -783,7 +814,9 @@ function recDetail(x, forAdmin) {
         el('a', { href: u, text: '佐證 ' + (i + 1), style: 'margin-right:12px',
                   onclick: ev => { ev.preventDefault(); openExt(u); } }))));
     }
+    items.push(...pair('員工可見', x.visible ? '看得到' : '看不到'));
     items.push(...pair('備註', x.memo), ...pair('建立', x.created + '・' + x.by), ...pair('最後修改', x.modified));
+    if (x.voided) items.push(...pair('作廢', x.voidAt + '・' + x.voidBy), ...pair('作廢原因', x.voidReason));
   }
   if (x.needConfirm) items.push(...pair('員工確認', x.confirmed || '尚未確認'));
   return el('dl', { class: 'profile' }, items);
@@ -804,7 +837,7 @@ function renderMyRecords(list) {
   const rest = list.filter(x => !(x.needConfirm && !x.confirmed));
   $('myRecBox').hidden = !rest.length;
   $('myRecs').replaceChildren(...rest.map(x => el('li', {}, [
-    el('span', { class: 'who', text: x.cat }, [el('small', { text: x.date })]),
+    el('span', { class: 'who', text: (x.reward ? '🎉 ' : '') + x.cat }, [el('small', { text: x.date })]),
     el('button', { class: 'ghost small-btn', text: '內容', onclick: ev => toggleDetail(ev, () => recDetail(x, false)) }),
     el('div', { class: 'topic', text: x.topic })
   ])));
@@ -858,29 +891,42 @@ function fillRecFilters() {
   fillSelect('rfEmp', '全部員工', rec.employees.map(e => ({ value: e.lineId, text: e.name + (e.status === '離職' ? '（離職）' : '') })));
   fillSelect('rfCat', '全部類別', rec.cats.map(c => ({ value: c, text: c })));
   fillSelect('rfStatus', '全部狀態', rec.statuses.map(s => ({ value: s, text: s }))
-    .concat([{ value: '_unconfirmed', text: '員工未確認' }]));
+    .concat([{ value: '_unconfirmed', text: '員工未確認' }, { value: '_reward', text: '獎勵紀錄' },
+             { value: '_hidden', text: '員工看不到' }, { value: '_voided', text: '已作廢' }]));
 }
 
 function renderRecList() {
   const fe = $('rfEmp').value, fc = $('rfCat').value, fs = $('rfStatus').value;
-  const list = rec.records.filter(x => (!fe || x.lineId === fe) && (!fc || x.cat === fc) &&
-    (!fs || (fs === '_unconfirmed' ? (x.needConfirm && !x.confirmed) : x.status === fs)));
+  const match = x => {
+    if (fs === '_voided') return x.voided;
+    if (x.voided) return false;   // 作廢的紀錄只在「已作廢」篩選裡出現
+    if (!fs) return true;
+    if (fs === '_unconfirmed') return x.needConfirm && !x.confirmed;
+    if (fs === '_reward') return x.reward;
+    if (fs === '_hidden') return !x.visible;
+    return x.status === fs;
+  };
+  const list = rec.records.filter(x => (!fe || x.lineId === fe) && (!fc || x.cat === fc) && match(x));
   const emp = fe ? rec.employees.find(e => e.lineId === fe) : null;
   $('rfCount').textContent = (emp ? emp.name + '：' + emp.tenure + '・' : '') + '共 ' + list.length + ' 筆';
-  $('recList').replaceChildren(...(list.length ? list.map(x => el('li', {}, [
-    el('span', { class: 'who', text: x.name }, [el('small', { text: x.cat })]),
-    el('span', { class: 'tag ' + (REC_TAG[x.status] || 'absent'), text: x.status }),
+  $('recList').replaceChildren(...(list.length ? list.map(x => el('li', x.voided ? { class: 'voided' } : {}, [
+    el('span', { class: 'who', text: x.name }, [el('small', { text: (x.reward ? '🎉 ' : '') + x.cat })]),
+    x.voided ? el('span', { class: 'tag absent', text: '已作廢' })
+             : el('span', { class: 'tag ' + (REC_TAG[x.status] || 'absent'), text: x.status }),
     el('div', { class: 'topic', text: x.topic }),
     el('div', { class: 'times' }, [
       el('span', { text: x.date + (x.time ? ' ' + x.time : '') }),
       x.due ? el('span', { text: '期限 ' + x.due }) : null,
       x.evidence.length ? el('span', { text: '📎 ' + x.evidence.length }) : null,
       x.needConfirm ? el('span', { class: 'tag ' + (x.confirmed ? 'ok' : 'err'),
-                                   text: x.confirmed ? '員工已確認' : '員工未確認' }) : null
+                                   text: x.confirmed ? '員工已確認' : '員工未確認' }) : null,
+      x.voided ? null : el('span', { class: 'tag ' + (x.visible ? 'ok' : 'absent'),
+                                     text: x.visible ? '員工看得到' : '員工看不到' })
     ]),
     el('div', { class: 'btns', style: 'grid-column:1 / -1' }, [
       el('button', { class: 'ghost small-btn', text: '內容', onclick: ev => toggleDetail(ev, () => recDetail(x, true)) }),
-      el('button', { class: 'ghost small-btn', text: '編輯', onclick: () => openRecForm(x) })
+      x.voided ? null : el('button', { class: 'ghost small-btn', text: '編輯', onclick: () => openRecForm(x) }),
+      x.voided ? null : el('button', { class: 'ghost small-btn', text: '作廢', onclick: () => voidRec(x) })
     ])
   ])) : [el('li', {}, [el('p', { class: 'empty', text: '沒有符合的紀錄' })])]));
 }
@@ -905,6 +951,7 @@ function openRecForm(x) {
   $('rcPlan').value = x ? x.plan : '';
   $('rcDue').value = x ? ymd(x.due) : '';
   $('rcMemo').value = x ? x.memo : '';
+  $('rcVisible').checked = x ? !!x.visible : false;   // 新增預設：員工看不到
   $('rcLink').value = '';
   renderPeople(x && x.people ? x.people.split('、') : []);
   renderEv();
@@ -922,7 +969,14 @@ function closeRecForm() {
 function updateRecHints() {
   const e = rec.employees.find(x => x.lineId === $('rcEmp').value);
   $('rcTenure').textContent = e ? e.tenure : '';
-  $('rcConfirmHint').hidden = rec.confirmCats.indexOf($('rcCat').value) < 0;
+  const cat = $('rcCat').value;
+  const needC = rec.confirmCats.indexOf(cat) >= 0;
+  $('rcConfirmHint').hidden = !needC;
+  if (needC) $('rcVisible').checked = true;
+  $('rcVisible').disabled = needC;
+  $('rcVisHint').textContent = needC ? '書面警告、PIP 需要員工確認，固定讓員工看得到。'
+    : $('rcVisible').checked ? '員工可以在「我的紀錄」看到這筆（不會發 LINE 通知）。'
+    : '只有管理員看得到，員工看不到這筆紀錄。';
 }
 
 function renderPeople(selected) {
@@ -1001,7 +1055,8 @@ async function saveRec() {
   const cat = $('rcCat').value;
   const name = $('rcEmp').selectedOptions[0].textContent;
   const needC = rec.confirmCats.indexOf(cat) >= 0;
-  let msg = '確定儲存這筆紀錄嗎？';
+  const visible = needC || $('rcVisible').checked;
+  let msg = '確定儲存這筆紀錄嗎？\n（' + (visible ? '員工看得到' : '員工看不到') + '）';
   if (needC && (!recEdit || !recEdit.needConfirm)) msg += '\n\n這是「' + cat + '」，儲存後會 LINE 通知 ' + name + ' 按已讀確認。';
   if (needC && recEdit && recEdit.confirmed) msg += '\n\n⚠️ ' + name + ' 已確認過這筆紀錄。如果修改了日期、類別、主題、事實、改善方向或期限，需要重新確認。';
   if (!window.confirm(msg)) return;
@@ -1011,7 +1066,8 @@ async function saveRec() {
     const r = await api({ action: 'rec_save', id: recEdit ? recEdit.id : '', lineId: $('rcEmp').value,
       date: v('rcDate'), time: v('rcTime'), cat: cat, status: $('rcStatus').value, topic: v('rcTopic'),
       facts: v('rcFacts'), plan: v('rcPlan'), due: v('rcDue'), evidence: recEv,
-      people: Array.from($('rcPeople').querySelectorAll('input:checked')).map(i => i.value), memo: v('rcMemo') });
+      people: Array.from($('rcPeople').querySelectorAll('input:checked')).map(i => i.value), memo: v('rcMemo'),
+      visible: visible });
     if (r.ok) {
       closeRecForm(); setBusy(false); await loadRec(); show(r.message, 'ok');
       $('recArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1019,6 +1075,21 @@ async function saveRec() {
     }
     show(r.message, 'err');
   } catch (e) { show('儲存失敗，請再按一次「儲存紀錄」。', 'err'); }
+  setBusy(false);
+}
+
+async function voidRec(x) {
+  const reason = window.prompt('作廢「' + x.name + '」' + x.date + ' 的「' + x.cat + '」紀錄\n\n' +
+    '作廢後員工看不到，但試算表會保留內容。請填寫作廢原因（例如：主管誤會，經查證非員工責任）：');
+  if (reason === null) return;
+  if (!reason.trim()) { show('請填寫作廢原因。', 'err'); return; }
+  setBusy(true);
+  try {
+    const r = await api({ action: 'rec_void', id: x.id, reason: reason.trim() });
+    setBusy(false);
+    if (r.ok) { await loadRec(); show(r.message, 'ok'); return; }
+    show(r.message, 'err');
+  } catch (e) { show('作廢失敗，請再試一次。', 'err'); }
   setBusy(false);
 }
 
@@ -1334,7 +1405,11 @@ $('btnRecSave').addEventListener('click', saveRec);
 $('btnAddLink').addEventListener('click', addLink);
 $('rcFile').addEventListener('change', e => uploadPhotos(e.target.files));
 $('rcEmp').addEventListener('change', updateRecHints);
-$('rcCat').addEventListener('change', updateRecHints);
+$('rcCat').addEventListener('change', () => {
+  if ((rec.rewardCats || []).indexOf($('rcCat').value) >= 0) $('rcStatus').value = '結案';   // 獎勵通常不用追蹤
+  updateRecHints();
+});
+$('rcVisible').addEventListener('change', updateRecHints);
 ['rfEmp', 'rfCat', 'rfStatus'].forEach(id => $(id).addEventListener('change', renderRecList));
 start();
 </script>
